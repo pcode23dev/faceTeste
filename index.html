@@ -2,23 +2,28 @@
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
-  <title>Comparação de Selfie com BI</title>
+  <title>Selfie x BI com switch de câmera</title>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <style>
     video, img { max-width: 300px; margin: 10px 0; display:block; }
+    button { margin: 2px; }
   </style>
 </head>
 <body>
-  <h1>Selfie x BI (Angola)</h1>
+  <h1>Selfie x BI (Angola) – escolha a câmera</h1>
 
   <h3>(1) Capturar BI</h3>
-  <video id="cameraDoc" autoplay playsinline></video>
-  <button id="startDoc">Iniciar câmera do BI</button>
+  <button id="docFront">Frontal (BI)</button>
+  <button id="docRear">Traseira (BI)</button>
+  <button id="startDoc" disabled>Iniciar BI</button><br>
+  <video id="cameraDoc" autoplay playsinline></video><br>
   <button id="captureDoc" disabled>Capturar BI</button>
 
   <h3>(2) Capturar Selfie</h3>
-  <video id="cameraSelfie" autoplay playsinline></video>
-  <button id="startSelfie">Iniciar câmera da Selfie</button>
+  <button id="selfFront">Frontal (Selfie)</button>
+  <button id="selfRear">Traseira (Selfie)</button>
+  <button id="startSelfie" disabled>Iniciar Selfie</button><br>
+  <video id="cameraSelfie" autoplay playsinline></video><br>
   <button id="captureSelfie" disabled>Capturar Selfie e Enviar</button>
 
   <canvas id="canvas" style="display:none;"></canvas>
@@ -34,75 +39,94 @@
     const API_KEY = "pzvEPa9yO238lNHAshnjKzztFVi17RII";
     const ENDPOINT = "https://api.idanalyzer.com";
 
-    let streamDoc, streamSelfie;
-    let imgDocB64, imgSelfieB64;
+    let streamDoc = null, streamSelfie = null;
+    let modeDoc = 'user', modeSelfie = 'user';
+    let imgDocB64 = '', imgSelfieB64 = '';
 
-    function startVideo(element, assignStream) {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(s => {
-          assignStream(s);
-          element.srcObject = s;
-        })
-        .catch(err => alert("Erro: " + err.message));
+    function stopStream(stream) {
+      if (stream) stream.getTracks().forEach(t => t.stop());
     }
 
-    $('#startDoc').click(() => {
-      startVideo($('#cameraDoc')[0], s => streamDoc = s);
-      $('#captureDoc').prop('disabled', false);
-    });
+    async function startWithFacingMode(facing, videoEl, isDoc) {
+      if (isDoc) {
+        stopStream(streamDoc);
+        document.getElementById('captureDoc').disabled = false;
+      } else {
+        stopStream(streamSelfie);
+        document.getElementById('captureSelfie').disabled = false;
+      }
 
-    $('#captureDoc').click(() => {
-      const video = $('#cameraDoc')[0];
-      const canvas = $('#canvas')[0];
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing },
+          audio: false
+        });
+        if (isDoc) {
+          streamDoc = newStream;
+          videoEl.srcObject = streamDoc;
+        } else {
+          streamSelfie = newStream;
+          videoEl.srcObject = streamSelfie;
+        }
+      } catch (err) {
+        alert("Erro ao acessar câmera: " + err.message);
+      }
+    }
+
+    // DOM events para BI
+    $('#docFront').click(()=> $('#startDoc').prop('disabled', false) & (modeDoc = 'user'));
+    $('#docRear').click(()=> $('#startDoc').prop('disabled', false) & (modeDoc = 'environment'));
+    $('#startDoc').click(()=> startWithFacingMode(modeDoc, $('#cameraDoc')[0], true));
+
+    $('#captureDoc').click(()=>{
+      const video = $('#cameraDoc')[0], canvas = $('#canvas')[0];
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.getContext('2d').drawImage(video,0,0);
       imgDocB64 = canvas.toDataURL('image/jpeg').split(',')[1];
       $('#docImg').attr('src', canvas.toDataURL('image/jpeg'));
-      $('#startSelfie').prop('disabled', false);
-    });
-
-    $('#startSelfie').click(() => {
-      startVideo($('#cameraSelfie')[0], s => streamSelfie = s);
       $('#captureSelfie').prop('disabled', false);
+      $('#selfFront').prop('disabled', false);
+      $('#selfRear').prop('disabled', false);
     });
 
-    $('#captureSelfie').click(() => {
-      const video = $('#cameraSelfie')[0];
-      const canvas = $('#canvas')[0];
+    // DOM events para Selfie
+    $('#selfFront').prop('disabled', true).click(()=> $('#startSelfie').prop('disabled', false) & (modeSelfie = 'user'));
+    $('#selfRear').prop('disabled', true).click(()=> $('#startSelfie').prop('disabled', false) & (modeSelfie = 'environment'));
+    $('#startSelfie').click(()=> startWithFacingMode(modeSelfie, $('#cameraSelfie')[0], false));
+
+    $('#captureSelfie').click(()=>{
+      const video = $('#cameraSelfie')[0], canvas = $('#canvas')[0];
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.getContext('2d').drawImage(video,0,0);
       imgSelfieB64 = canvas.toDataURL('image/jpeg').split(',')[1];
       $('#selfieImg').attr('src', canvas.toDataURL('image/jpeg'));
       sendToAPI();
     });
 
-    function sendToAPI() {
-      const payload = {
-        apikey: API_KEY,
-        file_base64: imgDocB64,
-        outputimage: true,
-        outputface: true,
-        outputmode: "base64",
-        face_base64: imgSelfieB64,
-        biometric_threshold: 0.5 // compara se score ≥ 0.5 (50%)
-      };
-
-      $('#result').text("Enviando...");
+    function sendToAPI(){
+      $('#result').text('Enviando...');
       $.ajax({
         url: ENDPOINT,
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify(payload),
-        success(res) {
+        data: JSON.stringify({
+          apikey: API_KEY,
+          file_base64: imgDocB64,
+          outputimage: true,
+          outputface: true,
+          outputmode: "base64",
+          face_base64: imgSelfieB64,
+          biometric_threshold: 0.5
+        }),
+        success(res){
           $('#result').html(`<pre>${JSON.stringify(res, null, 2)}</pre>`);
           $('#docImg').attr('src', 'data:image/jpeg;base64,'+res.cropped);
           $('#faceImg').attr('src', 'data:image/jpeg;base64,'+res.croppedface);
-          // Selfie já exibida
         },
-        error(xhr) {
-          $('#result').text("Erro HTTP " + xhr.status + ": " + xhr.responseText);
+        error(xhr){
+          $('#result').text(`Erro HTTP ${xhr.status}: ${xhr.responseText}`);
         }
       });
     }
