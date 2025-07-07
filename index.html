@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Comparação de Selfie com BI</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    video, img { max-width: 300px; margin: 10px 0; display:block; }
+  </style>
+</head>
+<body>
+  <h1>Selfie x BI (Angola)</h1>
+
+  <h3>(1) Capturar BI</h3>
+  <video id="cameraDoc" autoplay playsinline></video>
+  <button id="startDoc">Iniciar câmera do BI</button>
+  <button id="captureDoc" disabled>Capturar BI</button>
+
+  <h3>(2) Capturar Selfie</h3>
+  <video id="cameraSelfie" autoplay playsinline></video>
+  <button id="startSelfie">Iniciar câmera da Selfie</button>
+  <button id="captureSelfie" disabled>Capturar Selfie e Enviar</button>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <h3>Resultado da API:</h3>
+  <pre id="result"></pre>
+
+  <img id="docImg" alt="Documento recortado">
+  <img id="faceImg" alt="Face do documento">
+  <img id="selfieImg" alt="Selfie do usuário">
+
+  <script>
+    const API_KEY = "pzvEPa9yO238lNHAshnjKzztFVi17RII";
+    const ENDPOINT = "https://api.idanalyzer.com";
+
+    let streamDoc, streamSelfie;
+    let imgDocB64, imgSelfieB64;
+
+    function startVideo(element, assignStream) {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(s => {
+          assignStream(s);
+          element.srcObject = s;
+        })
+        .catch(err => alert("Erro: " + err.message));
+    }
+
+    $('#startDoc').click(() => {
+      startVideo($('#cameraDoc')[0], s => streamDoc = s);
+      $('#captureDoc').prop('disabled', false);
+    });
+
+    $('#captureDoc').click(() => {
+      const video = $('#cameraDoc')[0];
+      const canvas = $('#canvas')[0];
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      imgDocB64 = canvas.toDataURL('image/jpeg').split(',')[1];
+      $('#docImg').attr('src', canvas.toDataURL('image/jpeg'));
+      $('#startSelfie').prop('disabled', false);
+    });
+
+    $('#startSelfie').click(() => {
+      startVideo($('#cameraSelfie')[0], s => streamSelfie = s);
+      $('#captureSelfie').prop('disabled', false);
+    });
+
+    $('#captureSelfie').click(() => {
+      const video = $('#cameraSelfie')[0];
+      const canvas = $('#canvas')[0];
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      imgSelfieB64 = canvas.toDataURL('image/jpeg').split(',')[1];
+      $('#selfieImg').attr('src', canvas.toDataURL('image/jpeg'));
+      sendToAPI();
+    });
+
+    function sendToAPI() {
+      const payload = {
+        apikey: API_KEY,
+        file_base64: imgDocB64,
+        outputimage: true,
+        outputface: true,
+        outputmode: "base64",
+        face_base64: imgSelfieB64,
+        biometric_threshold: 0.5 // compara se score ≥ 0.5 (50%)
+      };
+
+      $('#result').text("Enviando...");
+      $.ajax({
+        url: ENDPOINT,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success(res) {
+          $('#result').html(`<pre>${JSON.stringify(res, null, 2)}</pre>`);
+          $('#docImg').attr('src', 'data:image/jpeg;base64,'+res.cropped);
+          $('#faceImg').attr('src', 'data:image/jpeg;base64,'+res.croppedface);
+          // Selfie já exibida
+        },
+        error(xhr) {
+          $('#result').text("Erro HTTP " + xhr.status + ": " + xhr.responseText);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
